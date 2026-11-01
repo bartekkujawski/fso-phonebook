@@ -1,98 +1,116 @@
 const express = require("express")
 const morgan = require("morgan")
-const PORT = process.env.PORT || 3001
-
-morgan.token("body", function (req) {
-  return JSON.stringify(req.body)
-})
+const Person = require("./models/person")
 
 const app = express()
 
 app.use(express.json())
 app.use(express.static("dist"))
 
-let phonebook = [
-  {
-    id: "1",
-    name: "Arto Hellas",
-    number: "040-123456",
-  },
-  {
-    id: "2",
-    name: "Ada Lovelace",
-    number: "39-44-5323523",
-  },
-  {
-    id: "3",
-    name: "Dan Abramov",
-    number: "12-43-234345",
-  },
-  {
-    id: "4",
-    name: "Mary Poppendieck",
-    number: "39-23-6423122",
-  },
-]
+const PORT = process.env.PORT
+
+const password = encodeURIComponent(process.argv[2])
+
+morgan.token("body", function (req) {
+  return JSON.stringify(req.body)
+})
 
 app.get("/", (req, res) => {
   res.send("<h1>Hello World</h1>")
 })
 
 app.get("/info", (req, res) => {
-  res.send(`<p>Phonebook has info for ${phonebook.length} people</p>
-  <p>${new Date()}</p>
-  `)
+  Person.find({}).then((people) => {
+    res.send(
+      `<p>Phonebook has info for ${people.length} people</p><p>${new Date()}</p>`,
+    )
+  })
 })
 
-app.get("/api/persons", (req, res) => {
-  res.json(phonebook)
-})
-
-app.get("/api/persons/:id", (req, res) => {
-  const id = req.params.id
-  const person = phonebook.find((p) => p.id === id)
-  if (person) {
+app.get("/api/people", (req, res) => {
+  Person.find({}).then((person) => {
     res.json(person)
-  } else {
-    res.status(404).end()
-    res.status(404).send({ error: "Person not found" })
-  }
+  })
+})
+
+app.get("/api/people/:id", (req, res, next) => {
+  const id = req.params.id
+  const person = Person.findById(id)
+    .then((person) => {
+      res.json(person)
+    })
+    .catch((err) => next(err))
 })
 
 app.use(
-  morgan(":method :url :status :res[content-length] - :response-time ms :body"),
+  morgan(":method :url :status :res[content-length] :response-time ms :body"),
 )
 
-app.post("/api/persons", (req, res) => {
-  const newId = Math.random() * 100000000
-
+app.post("/api/people", (req, res, next) => {
   if (!req.body.name) {
     return res.status(400).json({ error: "name missing" })
   } else if (!req.body.number) {
     return res.status(400).json({ error: "number missing" })
-  } else if (phonebook.some((person) => person.name === req.body.name)) {
-    return res
-      .status(400)
-      .json({ error: "the name already exists in the phonebook" })
   }
 
-  const person = {
-    id: newId,
+  const person = new Person({
     name: req.body.name,
     number: req.body.number,
+  })
+
+  person
+    .save()
+    .then((savedPerson) => {
+      res.json(savedPerson)
+    })
+    .catch((err) => next(err))
+})
+
+app.put("/api/persons/:id", (req, res, next) => {
+  const { name, number } = req.body
+
+  Person.findById(req.params.id)
+    .then((person) => {
+      if (!person) return res.status(404).end()
+
+      person.name = name
+      person.number = number
+
+      return person.save().then((updatedPerson) => {
+        res.json(updatedPerson)
+      })
+    })
+    .catch((err) => next(err))
+})
+
+app.delete("/api/persons/:id", (req, res, next) => {
+  const id = req.params.id
+  Person.findByIdAndDelete(id)
+    .then((deleted) => {
+      res.status(204).end()
+    })
+    .catch((err) => next(err))
+})
+
+const unknownEndpoint = (req, res) => {
+  res.status(404).send({ error: "unknown endpoint" })
+}
+
+app.use(unknownEndpoint)
+
+const errorHandler = (err, req, res, next) => {
+  console.error(err.message)
+
+  if (err.name === "CastError") {
+    return res.status(400).send({ error: "malformatted id" })
+  } else if (err.name === "ValidationError") {
+    return res.status(400).json({ error: err.message })
   }
 
-  phonebook = phonebook.concat(person)
+  next(err)
+}
 
-  res.json(person)
-})
-
-app.delete("/api/persons/:id", (req, res) => {
-  const id = req.params.id
-  phonebook = phonebook.filter((person) => person.id !== id)
-
-  res.status(204).end()
-})
+app.use(errorHandler)
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`)

@@ -9,8 +9,6 @@ app.use(express.static("dist"))
 
 const PORT = process.env.PORT
 
-const password = encodeURIComponent(process.argv[2])
-
 morgan.token("body", function (req) {
   return JSON.stringify(req.body)
 })
@@ -35,7 +33,7 @@ app.get("/api/people", (req, res) => {
 
 app.get("/api/people/:id", (req, res, next) => {
   const id = req.params.id
-  const person = Person.findById(id)
+  Person.findById(id)
     .then((person) => {
       res.json(person)
     })
